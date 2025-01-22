@@ -1,0 +1,442 @@
+---
+title: "Diabetes"
+author: "Kiran"
+date: "2025-01-20"
+output: word_document
+---
+
+```{r}
+# Lets load the dataset into the dataframe "diabetes_data". " This dataset is downloaded from kaggle and this dataset is originally from the National Institute of Diabetes and Digestive and Kidney Diseases
+
+getwd()
+diabetes_data <- read.csv("diabetes.csv")
+```
+
+```{r}
+# Lets know the data 
+# Using head and tail functions to see the first and last few records in the dataframe 
+head(diabetes_data)
+tail(diabetes_data)
+# Using "dim" function to get the dimensions of the dataframe "diabetes_data"
+dim(diabetes_data)
+
+# There are 768 rows of data with 9 columns 
+```
+```{r}
+# Lets see all the column names 
+names(diabetes_data)
+```
+```{r}
+# Lets change the "Outcome" column name to "Result"
+# Rename the "Outcome" column to "Result"
+colnames(diabetes_data)[colnames(diabetes_data) == "Outcome"] <- "Result"
+
+# Verify the change
+names(diabetes_data)
+
+```
+
+```{r}
+# Lets check the summary and structure of the dataframe "diabetes_data" to check for any missing values and any data inconsistencies 
+
+str(diabetes_data)
+summary(diabetes_data)
+```
+```{r}
+# The columns Glucose, BloodPressure, SkinThickness, Insulin, and BMI contain 0 values, which are biologically unrealistic and likely represent missing data.
+
+# Lets replace 0 with NA
+# Replace 0 values in these columns with NA to handle them as missing values:
+
+# Replace 0 values with NA for relevant columns
+cols_with_missing <- c("Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI")
+diabetes_data[cols_with_missing] <- lapply(diabetes_data[cols_with_missing], function(x) ifelse(x == 0, NA, x))
+
+# Verify the changes
+summary(diabetes_data)
+
+```
+```{r}
+# Lets see the total sum of missing values 
+sum(is.na(diabetes_data))
+```
+
+# There is no way we are going to delete the missing records 
+# Lets handle the missing values 
+
+```{r}
+# Now lets use one of the imputating techniques 
+# Impute missing values with median
+diabetes_data[cols_with_missing] <- lapply(diabetes_data[cols_with_missing], function(x) ifelse(is.na(x), median(x, na.rm = TRUE), x))
+
+# Verify the changes
+summary(diabetes_data)
+
+```
+
+```{r}
+# Before moving to model training, lets visualize the data to understand its distribution and relationships.
+# Lets load the visualization library "ggplot2"
+
+library(ggplot2)
+
+histogram <- ggplot(diabetes_data, aes(x = Glucose)) +
+             geom_histogram(binwidth = 10, fill = "skyblue", color = "black") +
+             labs(title = "Distribution of Glucose Levels", x = "Glucose", y = "Frequency")
+
+print(histogram)
+```
+
+```{r}
+# Correlation Matrix:
+# Lets use a heatmap to analyze correlations between features.
+ # install.packages("ggcorrplot")
+library(ggcorrplot)
+
+# Compute the correlation matrix
+cor_matrix <- cor(diabetes_data[, -9])  # Exclude 'Result'
+
+# correlation plot
+ggcorrplot(cor_matrix,
+  hc.order = TRUE,       # Hierarchical clustering order
+  type = "upper",        # Show only upper triangle
+  lab = TRUE,            # Add correlation coefficients
+  lab_size = 3,          # Size of the labels
+  colors = c("red", "white", "blue"), # Gradient colors
+  title = "Correlation Matrix", # Add a title
+  ggtheme = theme_minimal() # Clean ggplot theme
+)
+
+
+
+```
+# The correlation matrix provides valuable insights into the relationships between the numeric variables in the diabetes dataset. Moderate positive correlations are observed between variables like BMI and SkinThickness (0.54), Pregnancies and Age (0.54), and Glucose and Insulin (0.42), suggesting these pairs may share underlying patterns relevant to diabetes prediction. Conversely, weak correlations among features like DiabetesPedigreeFunction and others indicate little to no linear relationship. These findings highlight the importance of certain features, such as Glucose, BMI, and Insulin, for further analysis and model building while suggesting minimal overlap in predictive value for weakly correlated variables.
+
+
+```{r}
+library(ggplot2)
+
+# Convert 'Result' to a factor
+diabetes_data$Result <- as.factor(diabetes_data$Result)
+
+# Selected columns for analysis
+selected_vars <- c("Glucose", "Insulin", "BMI", "SkinThickness")
+
+# Pairwise scatter plots with Result as color
+for (i in 1:(length(selected_vars) - 1)) {
+  for (j in (i + 1):length(selected_vars)) {
+    plot <- ggplot(diabetes_data, aes(x = .data[[selected_vars[i]]], y = .data[[selected_vars[j]]], color = Result)) +
+      geom_point(alpha = 0.6) +
+      scale_color_manual(values = c("blue", "orange"), labels = c("No Diabetes", "Diabetes")) +
+      labs(
+        title = paste("Scatter Plot:", selected_vars[i], "vs", selected_vars[j]),
+        x = selected_vars[i],
+        y = selected_vars[j],
+        color = "Diabetes Outcome"
+      ) +
+      theme_minimal()
+    print(plot)
+  }
+}
+
+
+
+```
+
+# Feature Scaling 
+
+```{r}
+# Scaling selected features using Min-Max normalization
+cols_to_scale <- c("Glucose", "Insulin", "BMI", "SkinThickness")
+diabetes_data[cols_to_scale] <- lapply(diabetes_data[cols_to_scale], function(x) (x - min(x)) / (max(x) - min(x)))
+
+# Check scaled data
+summary(diabetes_data[cols_to_scale])
+
+```
+
+```{r}
+# Since the data is scaled lets split the dataset into two parts (training and testing sets )
+
+library(caret)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Split the dataset (80% training, 20% testing)
+train_index <- createDataPartition(diabetes_data$Result, p = 0.8, list = FALSE)
+train_data <- diabetes_data[train_index, ] # 80 % train data
+test_data <- diabetes_data[-train_index, ] # 20 % test data 
+
+```
+# Model Training 
+```{r}
+library(caret)
+
+
+# Convert the Result column to a factor if it isn't already
+train_data$Result <- factor(train_data$Result, levels = c(0, 1), labels = c("No", "Yes"))
+test_data$Result <- factor(test_data$Result, levels = c(0, 1), labels = c("No", "Yes"))
+
+# Verify the changes
+levels(train_data$Result)
+levels(test_data$Result)
+
+
+# Create a control object for cross-validation
+control <- trainControl(method = "cv", number = 5, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+# Logistic Regression
+lr_model <- train(Result ~ ., data = train_data, method = "glm", family = "binomial", trControl = control, metric = "ROC")
+
+# K-Nearest Neighbors
+knn_model <- train(Result ~ ., data = train_data, method = "knn", tuneLength = 10, trControl = control, metric = "ROC")
+
+# Decision Tree
+dt_model <- train(Result ~ ., data = train_data, method = "rpart", trControl = control, metric = "ROC")
+
+# Support Vector Machine
+svm_model <- train(Result ~ ., data = train_data, method = "svmRadial", trControl = control, metric = "ROC")
+
+# Naïve Bayes
+nb_model <- train(Result ~ ., data = train_data, method = "naive_bayes", trControl = control, metric = "ROC")
+
+```
+
+# Evaluate Model Performance
+
+```{r}
+# Predict probabilities on the test set
+test_predictions <- predict(lr_model, test_data, type = "prob")
+
+# Predict classes based on probabilities
+test_pred_classes <- predict(lr_model, test_data)
+
+# Confusion matrix
+conf_matrix <- confusionMatrix(test_pred_classes, test_data$Result, positive = "Yes")
+
+# Print confusion matrix and metrics
+print(conf_matrix)
+
+# ROC Curve
+library(pROC)
+roc_curve <- roc(test_data$Result, test_predictions$Yes) # Probability of "Yes"
+plot(roc_curve, col = "blue", main = "ROC Curve - Logistic Regression")
+auc_value <- auc(roc_curve)
+cat("AUC:", auc_value, "\n")
+
+```
+
+```{r}
+# Comparing with other models 
+# Train K-NN Model
+knn_model <- train(Result ~ ., data = train_data, method = "knn", trControl = control, metric = "ROC")
+
+# Evaluate K-NN Model
+knn_predictions <- predict(knn_model, test_data, type = "prob")
+knn_pred_classes <- predict(knn_model, test_data)
+knn_conf_matrix <- confusionMatrix(knn_pred_classes, test_data$Result, positive = "Yes")
+print(knn_conf_matrix)
+
+# ROC Curve for K-NN
+knn_roc <- roc(test_data$Result, knn_predictions$Yes)
+plot(knn_roc, col = "red", main = "ROC Curve - K-NN")
+auc_knn <- auc(knn_roc)
+cat("K-NN AUC:", auc_knn, "\n")
+
+```
+# Train and evaluate decison tree
+```{r}
+# Train Decision Tree
+dt_model <- train(Result ~ ., data = train_data, method = "rpart", trControl = control, metric = "ROC")
+
+# Predict and Evaluate
+dt_predictions <- predict(dt_model, test_data, type = "prob")
+dt_pred_classes <- predict(dt_model, test_data)
+dt_conf_matrix <- confusionMatrix(dt_pred_classes, test_data$Result, positive = "Yes")
+print(dt_conf_matrix)
+
+# ROC Curve
+dt_roc <- roc(test_data$Result, dt_predictions$Yes)
+plot(dt_roc, col = "green", main = "ROC Curve - Decision Tree")
+cat("Decision Tree AUC:", auc(dt_roc), "\n")
+
+```
+# Train and Evaluate Naïve Bayes
+```{r}
+# Train Naïve Bayes
+nb_model <- train(Result ~ ., data = train_data, method = "naive_bayes", trControl = control, metric = "ROC")
+
+# Predict and Evaluate
+nb_predictions <- predict(nb_model, test_data, type = "prob")
+nb_pred_classes <- predict(nb_model, test_data)
+nb_conf_matrix <- confusionMatrix(nb_pred_classes, test_data$Result, positive = "Yes")
+print(nb_conf_matrix)
+
+# ROC Curve
+nb_roc <- roc(test_data$Result, nb_predictions$Yes)
+plot(nb_roc, col = "purple", main = "ROC Curve - Naïve Bayes")
+cat("Naïve Bayes AUC:", auc(nb_roc), "\n")
+
+```
+
+# Train and Evaluate SVM
+```{r}
+# Train SVM
+svm_model <- train(Result ~ ., data = train_data, method = "svmRadial", trControl = control, metric = "ROC")
+
+# Predict and Evaluate
+svm_predictions <- predict(svm_model, test_data, type = "prob")
+svm_pred_classes <- predict(svm_model, test_data)
+svm_conf_matrix <- confusionMatrix(svm_pred_classes, test_data$Result, positive = "Yes")
+print(svm_conf_matrix)
+
+# ROC Curve
+svm_roc <- roc(test_data$Result, svm_predictions$Yes)
+plot(svm_roc, col = "orange", main = "ROC Curve - SVM")
+cat("SVM AUC:", auc(svm_roc), "\n")
+
+```
+# Decision Tree Evaluation
+```{r}
+# Predict probabilities for Decision Tree
+dt_predictions <- predict(dt_model, test_data, type = "prob")
+
+# Predict classes for Decision Tree
+dt_pred_classes <- predict(dt_model, test_data)
+
+# Confusion matrix for Decision Tree
+dt_conf_matrix <- confusionMatrix(dt_pred_classes, test_data$Result, positive = "Yes")
+print(dt_conf_matrix)
+
+# ROC Curve for Decision Tree
+dt_roc_curve <- roc(test_data$Result, dt_predictions$Yes)
+plot(dt_roc_curve, col = "green", main = "ROC Curve - Decision Tree")
+auc_dt <- auc(dt_roc_curve)
+cat("Decision Tree AUC:", auc_dt, "\n")
+
+```
+
+# Support Vector Machine (SVM) Evaluation
+```{r}
+# Predict probabilities for SVM
+svm_predictions <- predict(svm_model, test_data, type = "prob")
+
+# Predict classes for SVM
+svm_pred_classes <- predict(svm_model, test_data)
+
+# Confusion matrix for SVM
+svm_conf_matrix <- confusionMatrix(svm_pred_classes, test_data$Result, positive = "Yes")
+print(svm_conf_matrix)
+
+# ROC Curve for SVM
+svm_roc_curve <- roc(test_data$Result, svm_predictions$Yes)
+plot(svm_roc_curve, col = "purple", main = "ROC Curve - SVM")
+auc_svm <- auc(svm_roc_curve)
+cat("SVM AUC:", auc_svm, "\n")
+
+```
+#Naïve Bayes Evaluation
+```{r}
+# Predict probabilities for Naïve Bayes
+nb_predictions <- predict(nb_model, test_data, type = "prob")
+
+# Predict classes for Naïve Bayes
+nb_pred_classes <- predict(nb_model, test_data)
+
+# Confusion matrix for Naïve Bayes
+nb_conf_matrix <- confusionMatrix(nb_pred_classes, test_data$Result, positive = "Yes")
+print(nb_conf_matrix)
+
+# ROC Curve for Naïve Bayes
+nb_roc_curve <- roc(test_data$Result, nb_predictions$Yes)
+plot(nb_roc_curve, col = "orange", main = "ROC Curve - Naïve Bayes")
+auc_nb <- auc(nb_roc_curve)
+cat("Naïve Bayes AUC:", auc_nb, "\n")
+
+```
+# Performance comparison 
+```{r}
+# Initialize an empty data frame to store results
+results <- data.frame(
+  Model = character(),
+  Accuracy = numeric(),
+  AUC = numeric(),
+  Sensitivity = numeric(),
+  Specificity = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Function to calculate metrics
+get_metrics <- function(model, test_data, model_name) {
+  # Predictions
+  predictions_prob <- predict(model, test_data, type = "prob")
+  predictions <- predict(model, test_data)
+  
+  # Confusion matrix
+  conf_matrix <- confusionMatrix(predictions, test_data$Result, positive = "Yes")
+  
+  # ROC and AUC
+  roc_curve <- roc(test_data$Result, predictions_prob$Yes)
+  auc_value <- auc(roc_curve)
+  
+  # Add metrics to results data frame
+  results <<- rbind(results, data.frame(
+    Model = model_name,
+    Accuracy = conf_matrix$overall["Accuracy"],
+    AUC = auc_value,
+    Sensitivity = conf_matrix$byClass["Sensitivity"],
+    Specificity = conf_matrix$byClass["Specificity"]
+  ))
+}
+
+# Evaluate all models
+get_metrics(lr_model, test_data, "Logistic Regression")
+get_metrics(knn_model, test_data, "KNN")
+get_metrics(dt_model, test_data, "Decision Tree")
+get_metrics(svm_model, test_data, "SVM")
+get_metrics(nb_model, test_data, "Naïve Bayes")
+
+# Print the results
+print(results)
+
+```
+
+```{r}
+library(ggplot2)
+
+# Simple bar plot for accuracy comparison
+ggplot(results, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Model Accuracy Comparison",
+    x = "Model",
+    y = "Accuracy"
+  ) +
+  theme_minimal()
+
+
+
+```
+# Training the model 
+
+```{r}
+library(caret)
+
+# Train Logistic Regression Model
+control <- trainControl(method = "cv", number = 5, classProbs = TRUE, summaryFunction = twoClassSummary)
+lr_model <- train(Result ~ ., data = train_data, method = "glm", family = "binomial", trControl = control, metric = "ROC")
+
+# Save the Model
+saveRDS(lr_model, "best_model.rds")
+
+```
+
+
+##########################################################################
+
+
+
+
+```
+
